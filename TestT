@@ -1,0 +1,1457 @@
+if game.PlaceId ~= 142823291 then
+    game.Players.LocalPlayer:Kick("⚠ Script is only for Murder Mystery 2 ⚠")
+    return
+end
+
+game.StarterGui:SetCore("SendNotification", {
+    Title = "🎉✅ Game Detected",
+    Text = "Loading script..\nWait about 5 seconds..",
+    Duration = 5,
+    Button1 = "Okay",
+    Button2 = "While waiting, Copy Discord?",
+    Callback = function(button)
+        if button == "While wait; Copy Discord?" then
+            setclipboard("https://discord.gg/tAA9bzYyBx")
+        end
+    end
+})
+
+local Library = loadstring(game:HttpGetAsync("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
+local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/SaveManager.luau"))()
+local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
+
+local Window = Library:CreateWindow{
+    Title = "Altura Hub | MM2",
+    SubTitle = "by DatUnknownGuy & pxrson",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(710, 450),
+    Resize = true,
+    MinSize = Vector2.new(470, 380),
+    Acrylic = true,
+    Theme = "Vynixu",
+    MinimizeKey = Enum.KeyCode.LeftControl
+}
+
+local Tabs = {
+    Main        = Window:CreateTab{Title = "Main"},
+    Visuals     = Window:CreateTab{Title = "Visuals"},
+    Character   = Window:CreateTab{Title = "Character"},
+    Teleport    = Window:CreateTab{Title = "Teleportation"},
+    Utility     = Window:CreateTab{Title = "Utility"},
+    Credits     = Window:CreateTab{Title = "Credits"},
+    Information = Window:CreateTab{Title = "Information"},
+    Settings    = Window:CreateTab{Title = "Settings"}
+}
+
+game.StarterGui:SetCore("SendNotification", {
+    Title = "✅ Loaded",
+    Text = "Enjoy!",
+    Duration = 5
+})
+
+game.StarterGui:SetCore("SendNotification", {
+    Title = "Warning",
+    Text = "[Warning 1: Don't execute this script a lot. If you did, rejoin]\n\n[Warning 2: Please beware that we are not responsible for your actions <3]",
+    Duration = 10
+})
+
+local Options = Library.Options
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+local function isAlive()
+    return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and LocalPlayer.Character.Humanoid.Health > 0
+end
+
+local ESPSettings = {
+    Enabled = false,
+    Type = "Outline",
+    Color = Color3.fromRGB(255, 255, 255),
+    MurdererColor = Color3.fromRGB(255, 0, 0),
+    SheriffColor = Color3.fromRGB(0, 0, 255),
+    InnocentColor = Color3.fromRGB(0, 255, 0),
+    HeroColor = Color3.fromRGB(255, 165, 0),
+    LobbyColor = Color3.fromRGB(0, 0, 0),
+    TransparencyFill = 0.7,
+    TransparencyOutline = 0,
+    OutlineColor = Color3.fromRGB(255, 255, 255),
+    UpdateInterval = 0
+}
+
+local MovementSettings = {
+    SpeedEnabled = false,
+    SpeedValue = 32,
+    JumpPowerEnabled = false,
+    JumpPowerValue = 50,
+    JumpEnabled = false,
+    NoclipEnabled = false,
+    FlyEnabled = false,
+    FlySpeed = 50
+}
+
+local TeleportLocations = {
+    ["Lobby"] = CFrame.new(113.79631042480469, 155.70034790039062, 60.730159759521484)
+}
+
+local FlyConnection, NoclipConnection, JumpConnection, ESPUpdateConnection, RoundEndConnection, rainbowConnection
+local CurrentHero = nil
+local roles = {}
+local Murder, Sheriff, Hero
+local fullbrightEnabled = true
+local originalBrightness, originalAmbient, originalOutdoorAmbient
+
+local Connections = {
+    ESPUpdate = nil,
+    AutoKill = nil,
+    AutoShoot = nil,
+    StatsUpdate = nil,
+    Noclip = nil,
+    Fly = nil,
+    Rainbow = nil,
+    RoundEnd = nil
+}
+
+local CachedRoles = {}
+local CachedMurder, CachedSheriff, CachedHero
+local LastRoleUpdate = 0
+
+local mobileFlyGui, mobileFlyFlags = nil, nil
+
+local lastRoleState = {Murderer = nil, Sheriff = nil, Hero = nil}
+local gunDropped = false
+local lastESPUpdate = 0
+
+local ESPPlayerCache = {}
+
+local OriginalSheriff = nil
+
+local ProperRemoteName = "GetPlayerData"  --<< CHANGE TO THE CORRECT REMOTE'S NAME
+
+local function UpdateRoles()
+    if tick() - LastRoleUpdate < 0.1 then return end
+
+    local success, data = pcall(function()
+        local getPlayerData = ReplicatedStorage:FindFirstChild(ProperRemoteName, true)  -- Use the proper name
+        if not getPlayerData then
+            print("ERROR: RemoteFunction '" .. ProperRemoteName .. "' not found!")
+            return {}  -- Return empty table to prevent errors
+        end
+        return getPlayerData:InvokeServer() or {}
+    end)
+
+    if success then
+        -- ADDED: Print raw data for debugging
+        print("Raw Role Data:", data)  --<<<<<<<<<<<<<< Print this to see what you get back
+        CachedRoles = data
+
+        local oldMurder = CachedMurder
+        local oldSheriff = CachedSheriff
+        local oldHero = CachedHero
+        CachedMurder, CachedSheriff, CachedHero = nil, nil, nil
+
+        for name, v in pairs(CachedRoles) do
+            local player = nil
+            for _, p in pairs(Players:GetPlayers()) do
+                if p.Name:lower() == name:lower() then
+                    player = p
+                    break
+                end
+            end
+			
+            -- NEW: robust role checking
+            if player then 
+                if v and v.Role == "Murderer" then
+                    CachedMurder = player
+                    if oldMurder ~= player then Murder = player end
+                elseif v and v.Role == "Sheriff" then
+                    CachedSheriff = player
+                    if oldSheriff ~= player then Sheriff = player end
+                    if not OriginalSheriff or OriginalSheriff ~= player then
+                        OriginalSheriff = player
+                    end
+                elseif v and v.Role == "Hero" then  --added hero role
+                    CachedHero = player
+                    if oldHero ~= player then Hero = player end
+                end
+            end
+        end
+
+        -- Gun logic stays the same:
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player ~= CachedMurder and player ~= CachedSheriff then
+                if HasItem(player, "Gun") or HasItem(player, "Revolver") then
+                    CachedHero = player
+                    Hero = player
+                end
+            end
+        end
+
+        if OriginalSheriff and (not OriginalSheriff.Parent or not OriginalSheriff.Character) then
+            OriginalSheriff = nil
+        end
+
+        LastRoleUpdate = tick()
+    else
+        print("Error calling GetPlayerData:", data) -- Print the error
+    end
+end
+
+local function IsAlive(player)
+    local data = roles[player.Name]
+    return data and not data.Killed and not data.Dead
+end
+
+function IsPlayerHero(player)
+    return player == Hero
+end
+
+function IsPlayerInLobby(player)
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+        return true
+    end
+    local hrp = player.Character.HumanoidRootPart
+    return hrp.Position.Y > 100
+end
+
+function IsPlayerDead(player)
+    if not player.Character or not player.Character:FindFirstChild("Humanoid") then
+        return true
+    end
+    return player.Character.Humanoid.Health <= 0
+end
+
+function IsPlayerInRound(player)
+    return not IsPlayerDead(player) and not IsPlayerInLobby(player)
+end
+
+function HasItem(player, itemName)
+    if player.Backpack then
+        for _, item in pairs(player.Backpack:GetChildren()) do
+            if item.Name:lower() == itemName:lower() then
+                return true
+            end
+        end
+    end
+    if player.Character then
+        for _, item in pairs(player.Character:GetChildren()) do
+            if item.Name:lower() == itemName:lower() then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function GetPlayerRole(player)
+    if not player.Character or not player.Character:FindFirstChild("Humanoid") or player.Character.Humanoid.Health <= 0 then
+        return "Lobby", ESPSettings.LobbyColor
+    end
+    local roundActive = workspace:FindFirstChild("RoundMap") ~= nil
+    if not roundActive then
+        if player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.Position.Y > 100 then
+            return "Lobby", ESPSettings.LobbyColor
+        end
+        return "Innocent", ESPSettings.InnocentColor
+    else
+        if player.Character.Humanoid.Health > 0 then
+            if CachedMurder and player == CachedMurder then
+                return "Murderer", ESPSettings.MurdererColor
+            end
+            if CachedSheriff and player == CachedSheriff then
+                return "Sheriff", ESPSettings.SheriffColor
+            end
+            if CachedHero and player == CachedHero then
+                return "Hero", ESPSettings.HeroColor
+            end
+            return "Innocent", ESPSettings.InnocentColor
+        else
+            return "Lobby", ESPSettings.LobbyColor
+        end
+    end
+end
+
+function FindPlayerWithRole(role)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local playerRole, _ = GetPlayerRole(player)
+            if playerRole == role then
+                return player
+            end
+        end
+    end
+    return nil
+end
+
+local function removeESPFromCharacter(character)
+    if not character then return end
+    for _, obj in pairs(character:GetDescendants()) do
+        if obj:IsA("Highlight") or obj:IsA("BillboardGui") or obj.Name == "AlturaESP" or obj.Name == "AlturaESP_Highlight" then
+            obj:Destroy()
+        end
+    end
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("BoxHandleAdornment") and obj.Name == "AlturaESP" and character:FindFirstChild("HumanoidRootPart") and obj.Adornee == character.HumanoidRootPart then
+            obj:Destroy()
+        end
+    end
+end
+
+function ClearESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        removeESPObjects(player) --This is good
+    end
+
+    -- Double check workspace children, just in case
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if (obj:IsA("Highlight") or obj:IsA("BillboardGui") or obj:IsA("BoxHandleAdornment")) and (obj.Name == "AlturaESP" or obj.Name == "AlturaESP_Highlight") then
+            pcall(function() obj:Destroy() end)
+        end
+    end
+
+    if Connections.ESPUpdate then
+        Connections.ESPUpdate:Disconnect()
+        Connections.ESPUpdate = nil
+    end
+    --Clear the object cache
+    ESPObjectCache = {} -- Reset the table, don't just `table.clear()` for a clean slate
+end
+
+local ESPObjectCache = ESPObjectCache or {}
+
+local function findHeadOrFallback(character)
+    local head = character:FindFirstChild("Head")
+    if head then return head end
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") and part.Name:lower() == "head" then
+            return part
+        end
+    end
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            return part
+        end
+    end
+    return nil
+end
+
+local function findRootOrFallback(character)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp then return hrp end
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") and part.Name:lower():find("root") then
+            return part
+        end
+    end
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            return part
+        end
+    end
+    return nil
+end
+
+local function getOrCreateESPObject(player, type, role, roleColor)
+    if not player.Character then return end
+    if not player.Character:IsDescendantOf(game) then return end
+
+    local cache = ESPObjectCache[player] or {}
+    ESPObjectCache[player] = cache
+
+    if not cache.head or not cache.head.Parent then
+        cache.head = findHeadOrFallback(player.Character)
+    end
+    if not cache.hrp or not cache.hrp.Parent then
+        cache.hrp = findRootOrFallback(player.Character)
+    end
+
+    if not cache.head or not cache.hrp then return end
+
+    if type == "Outline" then
+        -- Create a *new* Highlight only if it doesn't exist
+        if not cache.Highlight or not cache.Highlight.Parent then
+            if cache.Highlight then cache.Highlight:Destroy() end  -- Ensure old is gone
+            local highlight = Instance.new("Highlight")
+            highlight.Name = "AlturaESP_Highlight"
+            highlight.Parent = player.Character
+            cache.Highlight = highlight -- Store the new Highlight
+        end
+
+        local highlight = cache.Highlight
+        highlight.FillTransparency = ESPSettings.TransparencyFill
+        highlight.OutlineTransparency = ESPSettings.TransparencyOutline
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillColor = roleColor
+        highlight.OutlineColor = ESPSettings.OutlineColor or Color3.new(1,1,1)
+
+    elseif type == "Box" then  -- Box logic (similar fixes)
+        if not cache.Box or not cache.Box.Parent then
+            if cache.Box then cache.Box:Destroy() end
+            local box = Instance.new("BoxHandleAdornment")
+            box.Size = Vector3.new(4, 6, 2)
+            box.Adornee = cache.hrp  --Use from cache
+            box.Color3 = roleColor
+            box.Transparency = 0.5
+            box.AlwaysOnTop = true
+            box.Name = "AlturaESP"
+            box.ZIndex = 10
+            box.Parent = workspace
+            cache.Box = box
+        else
+            cache.Box.Color3 = roleColor
+        end
+    elseif type == "NameTag" then  --NameTag logic (similar fixes)
+        if not cache.Billboard or not cache.Billboard.Parent then
+            if cache.Billboard then cache.Billboard:Destroy() end
+            local billboard = Instance.new("BillboardGui")
+            billboard.Size = UDim2.new(0, 150, 0, 40)
+            billboard.StudsOffset = Vector3.new(0, 4, 0)
+            billboard.Name = "AlturaESP"
+            billboard.AlwaysOnTop = true
+            billboard.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            billboard.Parent = cache.head --Use from cache
+
+            local textLabel = Instance.new("TextLabel")
+            textLabel.Size = UDim2.new(1, 0, 1, 0)
+            textLabel.BackgroundTransparency = 1
+            textLabel.Text = player.Name .. " (" .. role .. ")"
+            textLabel.TextColor3 = roleColor
+            textLabel.TextStrokeTransparency = 0.5
+            textLabel.TextScaled = true
+            textLabel.Font = Enum.Font.SourceSansBold
+            textLabel.TextSize = 28
+            textLabel.Parent = billboard
+            cache.Billboard = billboard
+        else
+            local textLabel = cache.Billboard:FindFirstChildOfClass("TextLabel")
+            if textLabel then
+                textLabel.Text = player.Name .. " (" .. role .. ")"
+                textLabel.TextColor3 = roleColor
+            end
+        end
+    end
+end
+
+local function removeESPObjects(player)
+    local cache = ESPObjectCache[player]
+    if cache then
+        if cache.Highlight and cache.Highlight.Parent then cache.Highlight:Destroy() end
+        if cache.Box and cache.Box.Parent then cache.Box:Destroy() end
+        if cache.Billboard and cache.Billboard.Parent then cache.Billboard:Destroy() end
+        ESPObjectCache[player] = nil
+    end
+end
+
+function RefreshESP()
+    ClearESP()
+    if ESPSettings.Enabled then
+        UpdateRoles()
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local role, roleColor = GetPlayerRole(player)
+                if player.Character then
+                    getOrCreateESPObject(player, ESPSettings.Type, role, roleColor)
+                end
+            end
+        end
+        if not Connections.ESPUpdate then
+            startESPUpdates()
+        end
+    end
+end
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function(char)
+            task.wait(0.1)
+            if ESPSettings.Enabled and getOrCreateESPObject then
+                local role, roleColor = GetPlayerRole(player)
+                getOrCreateESPObject(player, ESPSettings.Type, role, roleColor)
+            else
+                removeESPObjects(player)
+                if player.Character then
+                    for _, obj in pairs(player.Character:GetDescendants()) do
+                        if obj:IsA("Highlight") or obj:IsA("BillboardGui") or obj:IsA("BoxHandleAdornment") then
+                            if obj.Name == "AlturaESP" or obj.Name == "AlturaESP_Highlight" then
+                                pcall(function() obj:Destroy() end)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function(char)
+            task.wait(0.1)
+            if ESPSettings.Enabled and getOrCreateESPObject then
+                local role, roleColor = GetPlayerRole(player)
+                getOrCreateESPObject(player, ESPSettings.Type, role, roleColor)
+            else
+                removeESPObjects(player)
+                if player.Character then
+                    for _, obj in pairs(player.Character:GetDescendants()) do
+                        if obj:IsA("Highlight") or obj:IsA("BillboardGui") or obj:IsA("BoxHandleAdornment") then
+                            if obj.Name == "AlturaESP" or obj.Name == "AlturaESP_Highlight" then
+                                pcall(function() obj:Destroy() end)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    removeESPObjects(player)
+end)
+
+local lastRoleUpdateHeartbeat = 0
+function startESPUpdates()
+    if Connections.ESPUpdate then
+        Connections.ESPUpdate:Disconnect()
+    end
+    if ESPSettings.Enabled then
+        Connections.ESPUpdate = RunService.Heartbeat:Connect(function()
+            if not ESPSettings.Enabled then return end
+            UpdateRoles()
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    if player.Character then
+                        local role, roleColor = GetPlayerRole(player)
+                        getOrCreateESPObject(player, ESPSettings.Type, role, roleColor)
+                    else
+                        removeESPObjects(player)
+                    end
+                end
+            end
+        end)
+    end
+end
+
+function findGunDropInModels(parent)
+    for _, child in pairs(parent:GetChildren()) do
+        if child:IsA("Model") then
+            local foundGunDrop = child:FindFirstChild("GunDrop")
+            if foundGunDrop then
+                return foundGunDrop
+            end
+            local result = findGunDropInModels(child)
+            if result then
+                return result
+            end
+        end
+    end
+    return nil
+end
+
+function MonitorGunPickup()
+    local gunDrop = findGunDropInModels(workspace)
+    if gunDrop then
+        gunDropped = true
+        gunDrop.AncestryChanged:Connect(function(_, parent)
+            if not parent then
+                task.wait(0.1)
+                gunDropped = true
+            end
+        end)
+    else
+        gunDropped = false
+    end
+end
+
+function connectToRoundEnd()
+    if RoundEndConnection then RoundEndConnection:Disconnect() end
+    RoundEndConnection = workspace.ChildAdded:Connect(function(child)
+        if child.Name == "RoundStart" then
+            Hero = nil
+            task.wait(0.5)
+            ClearESP()
+            CachedMurder, CachedSheriff, CachedHero = nil, nil, nil
+            OriginalSheriff = nil
+            UpdateRoles()
+            if ESPSettings.Enabled then
+                RefreshESP()
+                startESPUpdates()
+            end
+            MonitorGunPickup()
+        end
+    end)
+    local roundEndConnection = workspace.ChildAdded:Connect(function(child)
+        if child.Name == "RoundEnd" then
+            task.spawn(function()
+                for i = 1, 30 do
+                    ClearESP()
+                    if ESPSettings.Enabled then
+                        UpdateRoles()
+                        RefreshESP()
+                    end
+                    task.wait(0.1)
+                end
+            end)
+        end
+    end)
+    
+    local playerConnection = Players.PlayerAdded:Connect(function(player)
+            player.CharacterAdded:Connect(function()
+            if ESPSettings.Enabled then
+                RefreshPlayer(player)
+            end
+        end)
+    end)
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            player.CharacterAdded:Connect(function()
+                if ESPSettings.Enabled then
+                    RefreshPlayer(player)
+                end
+            end)
+        end
+    end
+    
+    function RefreshPlayer(player)
+    if ESPSettings.Enabled and player and player.Character then
+        local role, roleColor = GetPlayerRole(player)
+        getOrCreateESPObject(player, ESPSettings.Type, role, roleColor)
+    end
+end
+
+local function monitorRoleAssignment()
+        local success, data = pcall(function()
+            local getPlayerData = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+            return getPlayerData and getPlayerData:InvokeServer() or {}
+        end)
+        
+        if success and data then
+            local foundMurderer = nil
+            local foundSheriff = nil
+            
+            for name, v in pairs(data) do
+                local player = Players:FindFirstChild(name)
+                if player then
+                    if v.Role == "Murderer" then 
+                        foundMurderer = player
+                        CachedMurder = player
+                    end
+                    if v.Role == "Sheriff" then 
+                        foundSheriff = player
+                        CachedSheriff = player
+                    end
+                    if v.Role == "Hero" then 
+                        CachedHero = player
+                    end
+                end
+            end
+            
+            if foundMurderer and not Murder then
+                Murder = foundMurderer
+            end
+            
+            if foundSheriff and not Sheriff then
+                Sheriff = foundSheriff
+            end
+            
+            if ESPSettings.Enabled then
+                RefreshESP()
+            end
+        end
+    end
+end
+
+Tabs.Main:CreateParagraph("Features", {
+    Title = "Welcome to Altura Hub",
+    Content = "Good script for Murder Mystery 2, with ESP, ESP Types that show the players role, movement mods, and more.",
+    ContentAlignment = Enum.TextXAlignment.Center
+})
+
+Tabs.Main:CreateSection("Features")
+Tabs.Main:CreateParagraph("Stats", {
+    Title = "Game Stats",
+    Content = "Loading...",
+    ContentAlignment = Enum.TextXAlignment.Left
+})
+
+local function getStatsText()
+    local murd = (CachedMurder and CachedMurder:IsA("Player") and CachedMurder.Name) or "Unknown"
+    local sheriff = (CachedSheriff and CachedSheriff:IsA("Player") and CachedSheriff.Name) or "Unknown"
+    local hero = (CachedHero and CachedHero:IsA("Player") and CachedHero.Name) or "None"
+    local innocents = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= CachedMurder and p ~= CachedSheriff and p ~= CachedHero then
+            table.insert(innocents, p.Name)
+        end
+    end
+    local gunStatus = CachedGunDrop and "Yes" or "No"
+    local txt = "Murderer: "..murd.."\nSheriff: "..sheriff.."\nHero: "..hero.."\nGun Dropped: "..gunStatus.."\nInnocents: "
+    if #innocents > 0 then
+        txt = txt .. table.concat(innocents, ", ")
+    else
+        txt = txt .. "None"
+    end
+    return txt
+end
+
+local lastStatsUpdate = 0
+local function updateStats()
+    if tick() - lastStatsUpdate > 1 then
+        statsParagraph:SetContent(getStatsText())
+        lastStatsUpdate = tick()
+    end
+end
+
+Connections.StatsUpdate = RunService.Heartbeat:Connect(updateStats)
+
+Tabs.Main:CreateButton{
+    Title = "Update Stats",
+    Description = "Manually update the stats info",
+    Callback = function()
+        UpdateRoles()
+        local murd = (CachedMurder and CachedMurder:IsA("Player") and CachedMurder.Name) or "Unknown"
+        local sheriff = (CachedSheriff and CachedSheriff:IsA("Player") and CachedSheriff.Name) or "Unknown"
+        local hero = (CachedHero and CachedHero:IsA("Player") and CachedHero.Name) or "None"
+        local innocents = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= CachedMurder and p ~= CachedSheriff and p ~= CachedHero then
+                table.insert(innocents, p.Name)
+            end
+        end
+        local gunStatus = CachedGunDrop and "Yes" or "No"
+        local txt = "Murderer: "..murd.."\nSheriff: "..sheriff.."\nHero: "..hero.."\nGun Dropped: "..gunStatus.."\nInnocents: "
+        if #innocents > 0 then
+            txt = txt .. table.concat(innocents, ", ")
+        else
+            txt = txt .. "None"
+        end
+        
+        Window:Dialog{
+            Title = "Stats Update",
+            Content = txt,
+            Buttons = {
+                {
+                    Title = "Ok",
+                    Callback = function() end
+                }
+            }
+        }
+        statsParagraph:SetContent(txt)
+    end
+}
+
+local AutoKillToggles = {
+    KillSheriff = false,
+    KillInnocents = false,
+    KillAll = false
+}
+
+Tabs.Main:CreateSection("Murderer Killing")
+Tabs.Main:CreateToggle("KillSheriff", {
+    Title = "Kill Sheriff",
+    Description = "Automatically kills the sheriff if you are the murderer",
+    Default = false
+}):OnChanged(function()
+    AutoKillToggles.KillSheriff = val
+    if Connections.AutoKill then
+        Connections.AutoKill:Disconnect()
+        Connections.AutoKill = nil
+    end
+    if AutoKillToggles.KillSheriff or AutoKillToggles.KillInnocents or AutoKillToggles.KillAll then
+        Connections.AutoKill = RunService.Heartbeat:Connect(function()
+            UpdateRoles()
+            local char = LocalPlayer.Character
+            if not char or not char:FindFirstChild("Humanoid") or not char:FindFirstChild("HumanoidRootPart") or char.Humanoid.Health <= 0 or LocalPlayer ~= CachedMurder then return end
+            if AutoKillToggles.KillAll then
+                for _, plr in pairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character.Humanoid.Health > 0 then
+                        local backpack = LocalPlayer:FindFirstChild("Backpack")
+                        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                        if not char or not humanoid then return end
+                        if not char:FindFirstChild("Knife") then
+                            local knife = backpack and backpack:FindFirstChild("Knife")
+                            if knife then
+                                local success = pcall(function() humanoid:EquipTool(knife) end)
+                                if not success or knife.Parent ~= char then
+                                    knife.Parent = char
+                                end
+                            end
+                        end
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        local targetHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp and targetHRP then
+                            hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 2)
+                            task.wait(0.1)
+                            firetouchinterest(hrp, targetHRP, 0)
+                            firetouchinterest(hrp, targetHRP, 1)
+                        end
+                        task.wait(0.10)
+                    end
+                end
+            else
+                if AutoKillToggles.KillSheriff then
+                    local sheriff = CachedSheriff or FindPlayerWithRole("Sheriff")
+                    local hero = CachedHero or FindPlayerWithRole("Hero")
+                    local target = sheriff or hero
+                    if target and target.Character and target.Character:FindFirstChild("Humanoid") and target.Character:FindFirstChild("HumanoidRootPart") and target.Character.Humanoid.Health > 0 then
+                        local backpack = LocalPlayer:FindFirstChild("Backpack")
+                        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                        if not char or not humanoid then return end
+                        if not char:FindFirstChild("Knife") then
+                            local knife = backpack and backpack:FindFirstChild("Knife")
+                            if knife then
+                                local success = pcall(function() humanoid:EquipTool(knife) end)
+                                if not success or knife.Parent ~= char then
+                                    knife.Parent = char
+                                end
+                            end
+                        end
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        local targetHRP = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp and targetHRP then
+                            hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 2)
+                            task.wait(0.1)
+                            firetouchinterest(hrp, targetHRP, 0)
+                            firetouchinterest(hrp, targetHRP, 1)
+                        end
+                        task.wait(0.10)
+                    end
+                end
+                if AutoKillToggles.KillInnocents then
+                    for _, plr in pairs(Players:GetPlayers()) do
+                        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character.Humanoid.Health > 0 then
+                            local role = GetPlayerRole(plr)
+                            if role == "Innocent" then
+                                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                                local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                                if not char or not humanoid then return end
+                                if not char:FindFirstChild("Knife") then
+                                    local knife = backpack and backpack:FindFirstChild("Knife")
+                                    if knife then
+                                        local success = pcall(function() humanoid:EquipTool(knife) end)
+                                        if not success or knife.Parent ~= char then
+                                            knife.Parent = char
+                                        end
+                                    end
+                                end
+                                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                local targetHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                                if hrp and targetHRP then
+                                    hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 2)
+                                    task.wait(0.1)
+                                    firetouchinterest(hrp, targetHRP, 0)
+                                    firetouchinterest(hrp, targetHRP, 1)
+                                end
+                                task.wait(0.10)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+Tabs.Main:CreateToggle("KillInnocents", {
+    Title = "Kill Innocents",
+    Description = "Automatically kills all innocents if you are the murderer",
+    Default = false
+})
+
+Tabs.Main:CreateToggle("KillAll", {
+    Title = "Kill All",
+    Description = "Automatically kills everyone except you if you are the murderer",
+    Default = false
+})
+
+local CachedGunDrop = nil
+local LastGunSearch = 0
+
+local function FindGunDrop()
+    if tick() - LastGunSearch < 0.5 then return CachedGunDrop end
+    CachedGunDrop = nil
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj.Name == "GunDrop" and obj:IsA("BasePart") then
+            CachedGunDrop = obj
+            break
+        end
+    end
+    LastGunSearch = tick()
+    return CachedGunDrop
+end
+
+local lastPickupTime = 0
+local function autoPickupGun()
+    if not isAlive() or tick() - lastPickupTime < 0.3 then return end
+    local gunDrop = FindGunDrop()
+    if not gunDrop then return end
+    local char = LocalPlayer.Character
+    local handle = gunDrop:FindFirstChild("Handle") or gunDrop
+    if handle and char:FindFirstChild("HumanoidRootPart") then
+        pcall(function()
+            firetouchinterest(char.HumanoidRootPart, handle, 0)
+            firetouchinterest(char.HumanoidRootPart, handle, 1)
+        end)
+        lastPickupTime = tick()
+    end
+end
+
+local autoPickupConnection = nil
+
+Tabs.Main:CreateSection("Auto")
+Tabs.Main:CreateToggle("AutoPickUpDroppedGun", {
+    Title = "Auto Pick-up Dropped Gun",
+    Description = "Automatically pick up dropped gun (BEWARE: may cause lag .. or not)",
+    Default = false
+})
+
+LocalPlayer.CharacterAdded:Connect(function()
+
+end)
+
+local lastShootAttempt = 0
+local function autoShootMurderer()
+    if not isAlive() or tick() - lastShootAttempt < 0.5 then return end
+    if LocalPlayer ~= CachedSheriff and LocalPlayer ~= CachedHero then return end
+    if CachedMurder and CachedMurder.Character and CachedMurder.Character:FindFirstChild("HumanoidRootPart") and CachedMurder.Character:FindFirstChild("Humanoid") and CachedMurder.Character.Humanoid.Health > 0 then
+        local char = LocalPlayer.Character
+        local gun = char:FindFirstChildOfClass("Tool") or LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
+        if gun and gun.Parent == LocalPlayer.Backpack then
+            gun.Parent = char
+        end
+        if gun and gun:FindFirstChild("Handle") then
+
+        end
+    end
+end
+
+Tabs.Main:CreateToggle("AutoShootMurderer", {
+    Title = "Auto Shoot Murderer",
+    Description = "Automatically shoots the murderer (Sheriff or Hero Only)(BEWARE: may not work)",
+    Default = false
+})
+
+Tabs.Main:CreateSection("Chat")
+Tabs.Main:CreateButton{
+    Title = "Expose Roles",
+    Description = "Expose who is Sheriff or Murderer players in the chat",
+    Callback = function()
+        local success, errorMsg = pcall(function()
+            local murderer = FindPlayerWithRole("Murderer")
+            local sheriff = FindPlayerWithRole("Sheriff")
+            local sent = false
+            if murderer or sheriff then
+                if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+                    local channel = TextChatService.TextChannels.RBXGeneral
+                    if murderer then
+                        channel:SendAsync("Murderer: " .. murderer.Name)
+                        sent = true
+                    end
+                    if sheriff then
+                        channel:SendAsync("Sheriff: " .. sheriff.Name)
+                        sent = true
+                    end
+                else
+                    local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                    if chatEvent then
+                        local sayMessage = chatEvent:FindFirstChild("SayMessageRequest")
+                        if sayMessage then
+                            if murderer then
+                                sayMessage:FireServer("Murderer: " .. murderer.Name, "All")
+                                sent = true
+                            end
+                            if sheriff then
+                                sayMessage:FireServer("Sheriff: " .. sheriff.Name, "All")
+                                sent = true
+                            end
+                        end
+                    end
+                end
+            end
+            if sent then
+                Library:Notify{
+                    Title = "Expose Roles",
+                    Content = "Roles exposed in chat",
+                    Duration = 3
+                }
+            else
+                Library:Notify{
+                    Title = "Expose Roles",
+                    Content = "No Murderer or Sheriff found",
+                    Duration = 3
+                }
+            end
+        end)
+        if not success then
+            Library:Notify{
+                Title = "Expose Roles",
+                Content = "Failed to send chat: " .. tostring(errorMsg),
+                Duration = 3
+            }
+        end
+    end
+}
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextChatService = game:GetService("TextChatService")
+local LocalPlayer = Players.LocalPlayer
+local Connections = {}
+
+Tabs.Main:CreateSection("Trolling & Fun")
+Tabs.Main:CreateToggle("Spinbot", {
+    Title = "Spinbot",
+    Description = "Makes your character spin extremely fast",
+    Default = false
+})
+
+Tabs.Main:CreateToggle("FakeLag", {
+    Title = "Fake Lag",
+    Description = "Fake lag by freezing your character every 0.5",
+    Default = false
+})
+
+Tabs.Main:CreateToggle("AutoGG", {
+    Title = "Auto GG",
+    Description = "Says 'gg' in chat when a round ends (BEWARE: may not work)",
+    Default = false
+})
+
+local function cleanup()
+    pcall(function()
+
+    end)
+end
+
+Tabs.Main:CreateSection("MORE COMING SOON!!")
+
+Tabs.Visuals:CreateSection("ESP")
+Tabs.Visuals:CreateToggle("ESPEnabled", {
+    Title = "Enable ESP",
+    Default = false
+})
+
+Tabs.Visuals:CreateDropdown("ESPType", {
+    Title = "ESP Type",
+    Values = {"Outline", "Box", "NameTag"},
+    Multi = false,
+    Default = 1
+})
+
+Tabs.Visuals:CreateSection("ESP Color")
+Tabs.Visuals:CreateColorpicker("ESPColor", {
+    Title = "ESP Color",
+    Default = ESPSettings.Color,
+    Transparency = ESPSettings.TransparencyFill
+})
+
+Tabs.Visuals:CreateColorpicker("MurdererColor", {
+    Title = "Murderer Color",
+    Default = ESPSettings.MurdererColor
+})
+
+Tabs.Visuals:CreateColorpicker("SheriffColor", {
+    Title = "Sheriff Color",
+    Default = ESPSettings.SheriffColor
+})
+
+Tabs.Visuals:CreateColorpicker("HeroColor", {
+    Title = "Hero Color",
+    Default = ESPSettings.HeroColor
+})
+
+Tabs.Visuals:CreateColorpicker("LobbyColor", {
+    Title = "Lobby/Dead Color",
+    Description = "Whenever someone is not in the match they are this esp",
+    Default = ESPSettings.LobbyColor
+})
+
+Tabs.Character:CreateSection("WalkSpeed")
+
+Tabs.Character:CreateSlider("SpeedValue", {
+    Title = "WalkSpeed Slider",
+    Description = "How fast you walk (0-200)",
+    Default = 16,
+    Min = 0,
+    Max = 200,
+    Rounding = 0,
+})
+
+Tabs.Character:CreateToggle("Speed", {
+    Title = "WalkSpeed",
+    Default = false,
+})
+
+Tabs.Character:CreateSection("Jump")
+Tabs.Character:CreateToggle("JumpPower", {
+    Title = "Jump Power",
+    Default = false
+})
+
+Tabs.Character:CreateSlider("JumpPowerValue", {
+    Title = "Jump Power Slider",
+    Description = "How many studs or high you jump (0-200)",
+    Default = 50,
+    Min = 0,
+    Max = 200,
+    Rounding = 0
+})
+
+Tabs.Character:CreateToggle("Jump", {
+    Title = "Infinite Jump",
+    Description = "Allows you to jump infinite",
+    Default = false
+})
+
+Tabs.Character:CreateSection("Movement/Others")
+Tabs.Character:CreateToggle("Noclip", {
+    Title = "Noclip",
+    Description = "Allows you to go through parts",
+    Default = false
+})
+
+Tabs.Character:CreateToggle("Fly", {
+    Title = "Fly",
+    Description = "Literally fly, works on both PC and mobile with the same controls",
+    Default = false
+})
+
+Tabs.Teleport:CreateSection("Lobby")
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Lobby",
+    Callback = function()
+
+    end
+}
+
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Secret Thing",
+    Callback = function()
+
+    end
+}
+
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Strange Thing",
+    Callback = function()
+
+    end
+}
+
+Tabs.Teleport:CreateSection("Murd & Sheriff")
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Murderer",
+    Callback = function()
+
+    end
+}
+
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Hero",
+    Callback = function()
+
+    end
+}
+
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Sheriff",
+    Callback = function()
+
+    end
+}
+
+Tabs.Teleport:CreateSection("Dropped Gun")
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Dropped Gun",
+    Callback = function()
+
+    end
+}
+
+local function getCurrentMap()
+    return workspace:FindFirstChild("RoundMap")
+end
+
+local function teleportToLobby()
+    local TeleportService = game:GetService("TeleportService")
+    TeleportService:Teleport(14282329, LocalPlayer)
+end
+
+Tabs.Teleport:CreateSection("Map")
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Current Map",
+    Description = "Teleports you to the current active map",
+    Callback = function()
+
+    end
+}
+
+local mapPadDropdownInitialized = false
+Tabs.Teleport:CreateDropdown("MapPadTeleport", {
+    Title = "Teleport to Map Pad",
+    Values = {"Map Pad 1", "Map Pad 2", "Map Pad 3"},
+    Multi = false,
+    Default = 1
+})
+
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Map Selection",
+    Callback = function()
+
+    end
+}
+
+local function getPlayerNames()
+    local names = {"None"}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(names, player.Name)
+        end
+    end
+    return names
+end
+
+Tabs.Teleport:CreateSection("Random")
+Tabs.Teleport:CreateDropdown("TeleportToPlayer", {
+    Title = "Teleport to Player",
+    Values = getPlayerNames(),
+    Multi = false,
+    Default = 1
+})
+
+Tabs.Teleport:CreateButton{
+    Title = "Reset Teleport to Player Dropdown",
+    Callback = function()
+
+    end
+}
+
+Tabs.Teleport:CreateButton{
+    Title = "Teleport to Random Inno(cent)",
+    Callback = function()
+
+    end
+}
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+
+end)
+
+Tabs.Utility:CreateButton{
+    Title = "Rejoin Same Server",
+    Callback = function()
+        local TeleportService = game:GetService("TeleportService")
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end
+}
+
+Tabs.Utility:CreateButton{
+    Title = "Server Hop",
+    Callback = function()
+        local HttpService = game:GetService("HttpService")
+        local TeleportService = game:GetService("TeleportService")
+        local servers = {}
+        local req = syn and syn.request or http and http.request or http_request or request
+        if req then
+            local body = req({
+                Url = "https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=2&limit=100"
+
+            }).Body
+            local decoded = HttpService:JSONDecode(body)
+            for _,v in pairs(decoded.data) do
+                if v.playing < v.maxPlayers and v.id ~= game.JobId then
+                    table.insert(servers, v.id)
+                end
+            end
+            if #servers > 0 then
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, servers[math.random(1,#servers)], LocalPlayer)
+            else
+                Library:Notify{Title = "Server Hop", Content = "No available servers found.", Duration = 3}
+            end
+        else
+            Library:Notify{Title = "Server Hop", Content = "No HTTP request function available.", Duration = 3}
+        end
+    end
+}
+
+Tabs.Utility:CreateButton{
+    Title = "Leave",
+    Callback = function()
+        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end
+}
+
+Tabs.Utility:CreateButton{
+    Title = "Reset",
+    Callback = function()
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.Health = 0
+        end
+    end
+}
+
+Tabs.Information:CreateSection("Questions")
+Tabs.Information:CreateParagraph("Paragraph", {
+    Title = "Who created this script?",
+    Content = "this was made by Dat1UnknownGuy\nwith the help from pxrson.\nnothing crazy, just a random project the devs put together"
+})
+
+Tabs.Information:CreateParagraph("Paragraph", {
+    Title = "Why did you make this?",
+    Content = "no real reason tbh\njust felt like messing around and making something"
+})
+
+Tabs.Information:CreateParagraph("Paragraph", {
+    Title = "This is ass nd tons of bugs",
+    Content = "yeah i know it's buggy lol\ni'm not good at coding, just tried my best.\nwasn't tryna make anything perfect"
+})
+
+Tabs.Information:CreateParagraph("Paragraph", {
+    Title = "Are you AI user?",
+    Content = "nah bru i'm not ai\nus devs typed all this\nstop 💔"
+})
+
+Tabs.Information:CreateSection("Info")
+Tabs.Information:CreateParagraph("Paragraph", {
+    Title = "Information",
+    Content = "this not sum god script lol\nso chill out. use or don't idc"
+})
+
+Tabs.Credits:CreateParagraph("Developers", {
+    Title = "Developers",
+    Content = "Devs: Dat1UnknownGuy & pxrson\nhell yeah boii",
+    TitleAlignment = "Middle",
+    ContentAlignment = Enum.TextXAlignment.Center
+})
+
+Tabs.Credits:CreateButton{
+    Title = "YouTube",
+    Description = "Notifies you the developer(s) YouTube link",
+    Callback = function()
+        Library:Notify{Title = "Credits", Content = "YouTube: https://youtube.com/@pxrsonv", Duration = 10}
+    end
+}
+
+Tabs.Credits:CreateButton{
+    Title = "Discord",
+    Description = "Notifies you the developer(s) Discord server link",
+    Callback = function()
+        Library:Notify{Title = "Credits", Content = "Discord: https://discord.gg/tAA9bzYyBx", Duration = 10}
+    end
+}
+
+Tabs.Settings:CreateSection("Useful")
+Tabs.Settings:CreateButton{
+    Title = "Fix Lag",
+    Description = "Attempts to fix your lag by cleaning up stuff",
+    Callback = function()
+        if Connections then
+            for _, conn in pairs(Connections) do
+                pcall(function()
+                    if typeof(conn) == "RBXScriptConnection" then
+                        conn:Disconnect()
+                    elseif type(conn) == "table" then
+                        for _, subConn in pairs(conn) do
+                            if typeof(subConn) == "RBXScriptConnection" then
+                                subConn:Disconnect()
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = 16
+                humanoid.JumpPower = 50
+                humanoid.PlatformStand = false
+            end
+        end
+        local Lighting = game:GetService("Lighting")
+        if originalBrightness then Lighting.Brightness = originalBrightness end
+        if originalAmbient then Lighting.Ambient = originalAmbient end
+        if originalOutdoorAmbient then Lighting.OutdoorAmbient = originalOutdoorAmbient end
+        Library:Notify{Title = "Fix Lag", Content = "Attempted to fix lag.. hope it works", Duration = 3}
+    end
+}
+
+Players.PlayerRemoving:Connect(function(player)
+    if player == CurrentHero then
+        CurrentHero = nil
+    end
+end)
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function()
+            task.wait(0.1)
+            if player == CurrentHero then
+                CurrentHero = nil
+            end
+            if ESPSettings.Enabled then
+                RefreshPlayer(player)
+            end
+        end)
+        if player.Character and ESPSettings.Enabled then
+            local role, roleColor = GetPlayerRole(player)
+            getOrCreateESPObject(player, ESPSettings.Type, role, roleColor)
+        elseif player.Character then
+            if removeESPObjects then
+                removeESPObjects(player)
+            end
+        end
+    end
+end
+
+function startESPUpdates()
+
+end
+
+MonitorGunPickup()
+connectToRoundEnd()
+
+Window:SelectTab(1)
+SaveManager:SetLibrary(Library)
+InterfaceManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+InterfaceManager:SetFolder("AlturaHub")
+SaveManager:SetFolder("AlturaHub/MM2")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+SaveManager:LoadAutoloadConfig()
+
+local function disconnectConnection(conn)
+
+end
+
+local function cleanup()
+
+end
+
+Players.PlayerRemoving:Connect(function(player)
+    if player == CachedHero then CachedHero = nil end
+    if player == CachedMurder then CachedMurder = nil end
+    if player == CachedSheriff then CachedSheriff = nil end
+    CachedRoles[player.Name] = nil
+end)
+
+local function onRoundEndTeleport()
+
+end
+
+workspace.ChildAdded:Connect(function(child)
+
+end)
+
+function RefreshPlayer(player)
+
+end
